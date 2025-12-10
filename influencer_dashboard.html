@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Influencer Performance Dashboard — Interactive Prototype</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <!-- jQuery (required by DataTables) -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <!-- DataTables -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.5/css/jquery.dataTables.min.css"/>
+  <script src="https://cdn.datatables.net/1.13.5/js/jquery.dataTables.min.js"></script>
+  <!-- FileSaver for CSV export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+  <style>
+    body { font-family: "Inter", "Roboto", Arial, sans-serif; margin: 16px; background:#f7f9fb; color:#1f2937; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:12px; }
+    .title { font-size:20px; font-weight:700; }
+    .subtitle { font-size:13px; color:#4b5563; margin-top:4px; }
+    .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .card-row { display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+    .kpi { background:white; padding:12px; border-radius:8px; box-shadow:0 1px 2px rgba(16,24,40,0.05); min-width:150px; flex:1 1 150px; }
+    .kpi .label { font-size:12px; color:#6b7280; }
+    .kpi .value { font-size:20px; font-weight:700; margin-top:6px; }
+    .layout { display:grid; grid-template-columns: 1fr 420px; gap:12px; }
+    .wide { grid-column: 1 / -1; }
+    .panel { background:white; padding:12px; border-radius:8px; box-shadow:0 1px 2px rgba(16,24,40,0.05); }
+    #filters { display:flex; gap:8px; flex-wrap:wrap; }
+    select, input[type="number"], input[type="text"] { padding:6px 8px; border-radius:6px; border:1px solid #e5e7eb; background:white; }
+    .chart { height:320px; }
+    .small-chart { height:200px; }
+    table.dataTable tbody th, table.dataTable tbody td { padding:6px 8px; }
+    .insights { background:#0ea5a4; color:white; padding:12px; border-radius:8px; }
+    .mobile-preview { border:1px dashed #cbd5e1; padding:8px; border-radius:8px; font-size:12px; color:#374151; margin-top:8px; }
+    .controls-right { display:flex; gap:8px; align-items:center; }
+    .btn { background:#0ea5a4; color:white; padding:8px 10px; border-radius:6px; cursor:pointer; border:none; }
+    .btn.secondary { background:#3b82f6; }
+    .btn.ghost { background:transparent; color:#374151; border:1px solid #e5e7eb; }
+    @media (max-width:1100px){
+      .layout { grid-template-columns: 1fr; }
+      .chart { height:260px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <div class="title">Influencer Performance Dashboard</div>
+      <div class="subtitle">Interactive prototype — filters, KPIs, charts and shortlist export</div>
+    </div>
+
+    <div class="controls-right">
+      <label for="dateRange">Date range:</label>
+      <select id="dateRange">
+        <option>Last 30 days</option>
+        <option>Last 7 days</option>
+        <option>Last 90 days</option>
+      </select>
+      <button class="btn ghost" id="exportAllCsv">Export All CSV</button>
+    </div>
+  </div>
+
+  <div id="filters" class="panel" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
+    <div>
+      <label>Platform</label><br>
+      <select id="filterPlatform"><option value="All">All</option></select>
+    </div>
+    <div>
+      <label>Category</label><br>
+      <select id="filterCategory"><option value="All">All</option></select>
+    </div>
+    <div>
+      <label>Verified</label><br>
+      <select id="filterVerified"><option value="All">All</option><option value="Yes">Yes</option><option value="No">No</option></select>
+    </div>
+    <div>
+      <label>Follower tier</label><br>
+      <select id="filterTier"><option value="All">All</option><option value="micro">micro (<=50K)</option><option value="mid">mid (50K-250K)</option><option value="macro">macro (250K-1M)</option><option value="mega">mega (&gt;1M)</option></select>
+    </div>
+    <div>
+      <label>Min engagement %</label><br>
+      <input type="number" id="filterMinEng" value="0" step="0.1" style="width:110px"/>
+    </div>
+    <div>
+      <label>Min 30d growth %</label><br>
+      <input type="number" id="filterMinGrowth" value="-100" step="0.1" style="width:110px"/>
+    </div>
+
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+      <input type="text" id="tableSearch" placeholder="Search influencer name..." style="width:220px"/>
+      <button class="btn secondary" id="applyFiltersBtn">Apply</button>
+      <button class="btn ghost" id="resetFiltersBtn">Reset</button>
+    </div>
+  </div>
+
+  <div class="card-row">
+    <div class="kpi panel">
+      <div class="label">Total Reach (sum followers)</div>
+      <div class="value" id="kpi_total_reach">—</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:6px">Sum followers of current selection</div>
+    </div>
+    <div class="kpi panel">
+      <div class="label">Average Engagement Rate (%)</div>
+      <div class="value" id="kpi_avg_eng">—</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:6px">Mean engagement rate across selection</div>
+    </div>
+    <div class="kpi panel">
+      <div class="label">Median 30d Growth (%)</div>
+      <div class="value" id="kpi_median_growth">—</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:6px">Median follower growth in 30 days</div>
+    </div>
+    <div class="kpi panel">
+      <div class="label">Verified Influencers</div>
+      <div class="value" id="kpi_verified_count">—</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:6px">Number of verified accounts</div>
+    </div>
+    <div class="kpi panel">
+      <div class="label">Avg Posts / Week</div>
+      <div class="value" id="kpi_avg_posts">—</div>
+      <div style="font-size:11px;color:#6b7280;margin-top:6px">Average posting cadence</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="panel">
+      <div id="chartEngByPlatform" class="chart"></div>
+    </div>
+
+    <div class="panel">
+      <div id="chartGrowthByPlatform" class="small-chart"></div>
+      <div style="height:8px"></div>
+      <div class="insights">
+        <strong>Insights</strong>
+        <ul style="margin-top:6px; margin-bottom:6px">
+          <li id="insight1">TikTok shows highest engagement & growth</li>
+          <li id="insight2">Micro & mid influencers often have higher engagement%</li>
+          <li id="insight3">YouTube has high reach but lower engagement%</li>
+          <li id="insight4">Use efficiency_score to balance reach + growth</li>
+        </ul>
+        <div style="font-size:12px; opacity:0.95">Recommendation: For engagement campaigns prioritize high-efficiency micro/mid creators on TikTok; for awareness use macro/mega for reach but validate engagement.</div>
+      </div>
+    </div>
+
+    <div class="panel wide">
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <div style="flex:1;">
+          <div id="chartScatter" class="chart"></div>
+        </div>
+        <div style="width:420px;">
+          <div id="chartHeatmap" class="small-chart"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div id="chartPie" class="small-chart"></div>
+    </div>
+
+    <div class="panel">
+      <div id="chartHist" class="small-chart"></div>
+    </div>
+
+    <div class="panel">
+      <div id="chartBox" class="small-chart"></div>
+    </div>
+
+    <div class="panel wide">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <h3 style="margin:0">Influencer Leaderboard</h3>
+        <div>
+          <button class="btn ghost" id="exportShortlist">Export Shortlist CSV</button>
+          <button class="btn" id="clearShortlist">Clear Selection</button>
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <table id="leaderboard" class="display" style="width:100%">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll"/></th>
+              <th>Influencer</th>
+              <th>Platform</th>
+              <th>Category</th>
+              <th>Followers</th>
+              <th>Engagement %</th>
+              <th>30d Growth %</th>
+              <th>Verified</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+/* ========== Embedded Dataset (from synthetic data) ========== */
+const rawData = [
+{"influencer_id":"influencer_001","influencer_name":"Influencer_001","platform":"Instagram","category":"Gaming","followers":8450,"avg_likes":560,"avg_comments":45,"engagement_rate_percent":7.28,"posts_per_week":4,"follower_growth_30d_percent":8.2,"verified":"No"},
+{"influencer_id":"influencer_002","influencer_name":"Influencer_002","platform":"TikTok","category":"Beauty","followers":15400,"avg_likes":1200,"avg_comments":95,"engagement_rate_percent":8.44,"posts_per_week":6,"follower_growth_30d_percent":12.5,"verified":"No"},
+{"influencer_id":"influencer_003","influencer_name":"Influencer_003","platform":"YouTube","category":"Fashion","followers":23000,"avg_likes":900,"avg_comments":60,"engagement_rate_percent":4.26,"posts_per_week":2,"follower_growth_30d_percent":3.1,"verified":"No"},
+{"influencer_id":"influencer_004","influencer_name":"Influencer_004","platform":"Twitch","category":"Tech","followers":12800,"avg_likes":420,"avg_comments":30,"engagement_rate_percent":3.66,"posts_per_week":5,"follower_growth_30d_percent":5.6,"verified":"No"},
+{"influencer_id":"influencer_005","influencer_name":"Influencer_005","platform":"Twitter","category":"Fitness","followers":5200,"avg_likes":210,"avg_comments":15,"engagement_rate_percent":4.33,"posts_per_week":3,"follower_growth_30d_percent":2.0,"verified":"No"},
+{"influencer_id":"influencer_006","influencer_name":"Influencer_006","platform":"Instagram","category":"Food","followers":19200,"avg_likes":1350,"avg_comments":110,"engagement_rate_percent":7.40,"posts_per_week":5,"follower_growth_30d_percent":9.8,"verified":"No"},
+{"influencer_id":"influencer_007","influencer_name":"Influencer_007","platform":"TikTok","category":"Travel","followers":27500,"avg_likes":2400,"avg_comments":180,"engagement_rate_percent":9.27,"posts_per_week":7,"follower_growth_30d_percent":18.0,"verified":"No"},
+{"influencer_id":"influencer_008","influencer_name":"Influencer_008","platform":"YouTube","category":"Lifestyle","followers":48000,"avg_likes":1600,"avg_comments":120,"engagement_rate_percent":3.67,"posts_per_week":3,"follower_growth_30d_percent":4.5,"verified":"No"},
+{"influencer_id":"influencer_009","influencer_name":"Influencer_009","platform":"Twitch","category":"Gaming","followers":9400,"avg_likes":680,"avg_comments":55,"engagement_rate_percent":7.81,"posts_per_week":6,"follower_growth_30d_percent":7.0,"verified":"No"},
+{"influencer_id":"influencer_010","influencer_name":"Influencer_010","platform":"Twitter","category":"Tech","followers":6300,"avg_likes":220,"avg_comments":18,"engagement_rate_percent":3.79,"posts_per_week":2,"follower_growth_30d_percent":1.2,"verified":"No"},
+{"influencer_id":"influencer_011","influencer_name":"Influencer_011","platform":"Instagram","category":"Beauty","followers":46000,"avg_likes":2900,"avg_comments":210,"engagement_rate_percent":6.59,"posts_per_week":5,"follower_growth_30d_percent":6.4,"verified":"Yes"},
+{"influencer_id":"influencer_012","influencer_name":"Influencer_012","platform":"TikTok","category":"Fashion","followers":39000,"avg_likes":3100,"avg_comments":230,"engagement_rate_percent":8.59,"posts_per_week":6,"follower_growth_30d_percent":15.2,"verified":"No"},
+{"influencer_id":"influencer_013","influencer_name":"Influencer_013","platform":"YouTube","category":"Gaming","followers":52000,"avg_likes":2200,"avg_comments":130,"engagement_rate_percent":4.81,"posts_per_week":3,"follower_growth_30d_percent":3.9,"verified":"No"},
+{"influencer_id":"influencer_014","influencer_name":"Influencer_014","platform":"Twitch","category":"Tech","followers":15000,"avg_likes":700,"avg_comments":48,"engagement_rate_percent":4.99,"posts_per_week":4,"follower_growth_30d_percent":2.8,"verified":"No"},
+{"influencer_id":"influencer_015","influencer_name":"Influencer_015","platform":"Twitter","category":"Food","followers":7600,"avg_likes":340,"avg_comments":28,"engagement_rate_percent":4.55,"posts_per_week":3,"follower_growth_30d_percent":-1.1,"verified":"No"},
+{"influencer_id":"influencer_016","influencer_name":"Influencer_016","platform":"Instagram","category":"Travel","followers":28500,"avg_likes":2100,"avg_comments":150,"engagement_rate_percent":8.95,"posts_per_week":5,"follower_growth_30d_percent":11.0,"verified":"No"},
+{"influencer_id":"influencer_017","influencer_name":"Influencer_017","platform":"TikTok","category":"Lifestyle","followers":17100,"avg_likes":1450,"avg_comments":110,"engagement_rate_percent":9.24,"posts_per_week":7,"follower_growth_30d_percent":9.5,"verified":"No"},
+{"influencer_id":"influencer_018","influencer_name":"Influencer_018","platform":"YouTube","category":"Beauty","followers":68000,"avg_likes":2100,"avg_comments":150,"engagement_rate_percent":3.46,"posts_per_week":2,"follower_growth_30d_percent":2.7,"verified":"Yes"},
+{"influencer_id":"influencer_019","influencer_name":"Influencer_019","platform":"Twitch","category":"Fashion","followers":12500,"avg_likes":760,"avg_comments":58,"engagement_rate_percent":6.54,"posts_per_week":4,"follower_growth_30d_percent":6.8,"verified":"No"},
+{"influencer_id":"influencer_020","influencer_name":"Influencer_020","platform":"Twitter","category":"Gaming","followers":9300,"avg_likes":380,"avg_comments":35,"engagement_rate_percent":4.52,"posts_per_week":3,"follower_growth_30d_percent":0.9,"verified":"No"},
+{"influencer_id":"influencer_021","influencer_name":"Influencer_021","platform":"Instagram","category":"Fitness","followers":5400,"avg_likes":330,"avg_comments":20,"engagement_rate_percent":6.30,"posts_per_week":4,"follower_growth_30d_percent":5.0,"verified":"No"},
+{"influencer_id":"influencer_022","influencer_name":"Influencer_022","platform":"TikTok","category":"Food","followers":47000,"avg_likes":4200,"avg_comments":310,"engagement_rate_percent":9.68,"posts_per_week":8,"follower_growth_30d_percent":20.1,"verified":"No"},
+{"influencer_id":"influencer_023","influencer_name":"Influencer_023","platform":"YouTube","category":"Travel","followers":98000,"avg_likes":2500,"avg_comments":200,"engagement_rate_percent":2.76,"posts_per_week":2,"follower_growth_30d_percent":1.8,"verified":"Yes"},
+{"influencer_id":"influencer_024","influencer_name":"Influencer_024","platform":"Twitch","category":"Lifestyle","followers":11200,"avg_likes":760,"avg_comments":65,"engagement_rate_percent":7.41,"posts_per_week":5,"follower_growth_30d_percent":4.2,"verified":"No"},
+{"influencer_id":"influencer_025","influencer_name":"Influencer_025","platform":"Twitter","category":"Beauty","followers":6900,"avg_likes":310,"avg_comments":26,"engagement_rate_percent":4.94,"posts_per_week":3,"follower_growth_30d_percent":-0.8,"verified":"No"},
+{"influencer_id":"influencer_026","influencer_name":"Influencer_026","platform":"Instagram","category":"Fashion","followers":42000,"avg_likes":2800,"avg_comments":190,"engagement_rate_percent":7.86,"posts_per_week":5,"follower_growth_30d_percent":10.3,"verified":"Yes"},
+{"influencer_id":"influencer_027","influencer_name":"Influencer_027","platform":"TikTok","category":"Tech","followers":37000,"avg_likes":2800,"avg_comments":220,"engagement_rate_percent":8.65,"posts_per_week":6,"follower_growth_30d_percent":12.0,"verified":"No"},
+{"influencer_id":"influencer_028","influencer_name":"Influencer_028","platform":"YouTube","category":"Fitness","followers":54000,"avg_likes":1600,"avg_comments":120,"engagement_rate_percent":3.26,"posts_per_week":3,"follower_growth_30d_percent":2.2,"verified":"No"},
+{"influencer_id":"influencer_029","influencer_name":"Influencer_029","platform":"Twitch","category":"Food","followers":8900,"avg_likes":620,"avg_comments":48,"engagement_rate_percent":7.80,"posts_per_week":4,"follower_growth_30d_percent":6.0,"verified":"No"},
+{"influencer_id":"influencer_030","influencer_name":"Influencer_030","platform":"Twitter","category":"Travel","followers":4700,"avg_likes":150,"avg_comments":12,"engagement_rate_percent":3.40,"posts_per_week":1,"follower_growth_30d_percent":-2.5,"verified":"No"},
+{"influencer_id":"influencer_031","influencer_name":"Influencer_031","platform":"Instagram","category":"Lifestyle","followers":15000,"avg_likes":950,"avg_comments":70,"engagement_rate_percent":6.80,"posts_per_week":4,"follower_growth_30d_percent":4.9,"verified":"No"},
+{"influencer_id":"influencer_032","influencer_name":"Influencer_032","platform":"TikTok","category":"Gaming","followers":22000,"avg_likes":2000,"avg_comments":150,"engagement_rate_percent":9.32,"posts_per_week":7,"follower_growth_30d_percent":16.5,"verified":"No"},
+{"influencer_id":"influencer_033","influencer_name":"Influencer_033","platform":"YouTube","category":"Beauty","followers":33000,"avg_likes":1200,"avg_comments":90,"engagement_rate_percent":3.94,"posts_per_week":3,"follower_growth_30d_percent":3.4,"verified":"No"},
+{"influencer_id":"influencer_034","influencer_name":"Influencer_034","platform":"Twitch","category":"Fashion","followers":10300,"avg_likes":720,"avg_comments":55,"engagement_rate_percent":7.25,"posts_per_week":5,"follower_growth_30d_percent":5.7,"verified":"No"},
+{"influencer_id":"influencer_035","influencer_name":"Influencer_035","platform":"Twitter","category":"Tech","followers":8800,"avg_likes":290,"avg_comments":25,"engagement_rate_percent":3.52,"posts_per_week":2,"follower_growth_30d_percent":0.0,"verified":"No"},
+{"influencer_id":"influencer_036","influencer_name":"Influencer_036","platform":"Instagram","category":"Food","followers":26000,"avg_likes":1800,"avg_comments":140,"engagement_rate_percent":7.31,"posts_per_week":5,"follower_growth_30d_percent":9.0,"verified":"No"},
+{"influencer_id":"influencer_037","influencer_name":"Influencer_037","platform":"TikTok","category":"Travel","followers":94000,"avg_likes":9200,"avg_comments":680,"engagement_rate_percent":10.00,"posts_per_week":9,"follower_growth_30d_percent":25.0,"verified":"Yes"},
+{"influencer_id":"influencer_038","influencer_name":"Influencer_038","platform":"YouTube","category":"Lifestyle","followers":42000,"avg_likes":1400,"avg_comments":110,"engagement_rate_percent":3.69,"posts_per_week":3,"follower_growth_30d_percent":2.9,"verified":"No"},
+{"influencer_id":"influencer_039","influencer_name":"Influencer_039","platform":"Twitch","category":"Gaming","followers":15800,"avg_likes":1100,"avg_comments":90,"engagement_rate_percent":7.59,"posts_per_week":6,"follower_growth_30d_percent":8.4,"verified":"No"},
+{"influencer_id":"influencer_040","influencer_name":"Influencer_040","platform":"Twitter","category":"Beauty","followers":5400,"avg_likes":240,"avg_comments":18,"engagement_rate_percent":4.44,"posts_per_week":2,"follower_growth_30d_percent":-1.5,"verified":"No"},
+{"influencer_id":"influencer_041","influencer_name":"Influencer_041","platform":"Instagram","category":"Fashion","followers":47000,"avg_likes":3100,"avg_comments":220,"engagement_rate_percent":7.87,"posts_per_week":6,"follower_growth_30d_percent":12.2,"verified":"Yes"},
+{"influencer_id":"influencer_042","influencer_name":"Influencer_042","platform":"TikTok","category":"Tech","followers":32000,"avg_likes":2600,"avg_comments":190,"engagement_rate_percent":8.69,"posts_per_week":7,"follower_growth_30d_percent":14.9,"verified":"No"},
+{"influencer_id":"influencer_043","influencer_name":"Influencer_043","platform":"YouTube","category":"Fitness","followers":64000,"avg_likes":2000,"avg_comments":150,"engagement_rate_percent":3.44,"posts_per_week":3,"follower_growth_30d_percent":3.1,"verified":"No"},
+{"influencer_id":"influencer_044","influencer_name":"Influencer_044","platform":"Twitch","category":"Food","followers":7400,"avg_likes":520,"avg_comments":40,"engagement_rate_percent":7.43,"posts_per_week":4,"follower_growth_30d_percent":5.2,"verified":"No"},
+{"influencer_id":"influencer_045","influencer_name":"Influencer_045","platform":"Twitter","category":"Travel","followers":11500,"avg_likes":520,"avg_comments":40,"engagement_rate_percent":4.78,"posts_per_week":3,"follower_growth_30d_percent":1.0,"verified":"No"},
+{"influencer_id":"influencer_046","influencer_name":"Influencer_046","platform":"Instagram","category":"Lifestyle","followers":35000,"avg_likes":2200,"avg_comments":165,"engagement_rate_percent":6.09,"posts_per_week":5,"follower_growth_30d_percent":7.6,"verified":"No"},
+{"influencer_id":"influencer_047","influencer_name":"Influencer_047","platform":"TikTok","category":"Gaming","followers":28000,"avg_likes":2400,"avg_comments":190,"engagement_rate_percent":9.61,"posts_per_week":8,"follower_growth_30d_percent":17.3,"verified":"No"},
+{"influencer_id":"influencer_048","influencer_name":"Influencer_048","platform":"YouTube","category":"Beauty","followers":98000,"avg_likes":3600,"avg_comments":280,"engagement_rate_percent":3.98,"posts_per_week":2,"follower_growth_30d_percent":4.0,"verified":"Yes"},
+{"influencer_id":"influencer_049","influencer_name":"Influencer_049","platform":"Twitch","category":"Fashion","followers":13200,"avg_likes":900,"avg_comments":70,"engagement_rate_percent":7.42,"posts_per_week":4,"follower_growth_30d_percent":6.7,"verified":"No"},
+{"influencer_id":"influencer_050","influencer_name":"Influencer_050","platform":"Twitter","category":"Tech","followers":6700,"avg_likes":240,"avg_comments":20,"engagement_rate_percent":3.88,"posts_per_week":1,"follower_growth_30d_percent":-0.9,"verified":"No"},
+{"influencer_id":"influencer_051","influencer_name":"Influencer_051","platform":"Instagram","category":"Food","followers":54000,"avg_likes":3800,"avg_comments":300,"engagement_rate_percent":7.96,"posts_per_week":6,"follower_growth_30d_percent":11.5,"verified":"Yes"},
+{"influencer_id":"influencer_052","influencer_name":"Influencer_052","platform":"TikTok","category":"Travel","followers":19800,"avg_likes":1600,"avg_comments":120,"engagement_rate_percent":8.59,"posts_per_week":7,"follower_growth_30d_percent":10.8,"verified":"No"},
+{"influencer_id":"influencer_053","influencer_name":"Influencer_053","platform":"YouTube","category":"Lifestyle","followers":46000,"avg_likes":1500,"avg_comments":110,"engagement_rate_percent":3.52,"posts_per_week":3,"follower_growth_30d_percent":2.1,"verified":"No"},
+{"influencer_id":"influencer_054","influencer_name":"Influencer_054","platform":"Twitch","category":"Gaming","followers":21200,"avg_likes":1700,"avg_comments":140,"engagement_rate_percent":8.01,"posts_per_week":6,"follower_growth_30d_percent":9.9,"verified":"No"},
+{"influencer_id":"influencer_055","influencer_name":"Influencer_055","platform":"Twitter","category":"Beauty","followers":5900,"avg_likes":280,"avg_comments":22,"engagement_rate_percent":5.08,"posts_per_week":2,"follower_growth_30d_percent":0.5,"verified":"No"},
+{"influencer_id":"influencer_056","influencer_name":"Influencer_056","platform":"Instagram","category":"Fashion","followers":72000,"avg_likes":4600,"avg_comments":350,"engagement_rate_percent":6.94,"posts_per_week":6,"follower_growth_30d_percent":9.2,"verified":"Yes"},
+{"influencer_id":"influencer_057","influencer_name":"Influencer_057","platform":"TikTok","category":"Tech","followers":84000,"avg_likes":7600,"avg_comments":580,"engagement_rate_percent":9.83,"posts_per_week":9,"follower_growth_30d_percent":22.7,"verified":"Yes"},
+{"influencer_id":"influencer_058","influencer_name":"Influencer_058","platform":"YouTube","category":"Fitness","followers":125000,"avg_likes":4200,"avg_comments":320,"engagement_rate_percent":3.78,"posts_per_week":3,"follower_growth_30d_percent":3.0,"verified":"Yes"},
+{"influencer_id":"influencer_059","influencer_name":"Influencer_059","platform":"Twitch","category":"Food","followers":17800,"avg_likes":1300,"avg_comments":100,"engagement_rate_percent":7.91,"posts_per_week":5,"follower_growth_30d_percent":8.7,"verified":"No"},
+{"influencer_id":"influencer_060","influencer_name":"Influencer_060","platform":"Twitter","category":"Travel","followers":8300,"avg_likes":320,"avg_comments":25,"engagement_rate_percent":4.22,"posts_per_week":2,"follower_growth_30d_percent":1.5,"verified":"No"},
+{"influencer_id":"influencer_061","influencer_name":"Influencer_061","platform":"Instagram","category":"Lifestyle","followers":26000,"avg_likes":1700,"avg_comments":130,"engagement_rate_percent":7.31,"posts_per_week":5,"follower_growth_30d_percent":7.8,"verified":"No"},
+{"influencer_id":"influencer_062","influencer_name":"Influencer_062","platform":"TikTok","category":"Gaming","followers":31000,"avg_likes":2800,"avg_comments":210,"engagement_rate_percent":9.03,"posts_per_week":7,"follower_growth_30d_percent":13.3,"verified":"No"},
+{"influencer_id":"influencer_063","influencer_name":"Influencer_063","platform":"YouTube","category":"Beauty","followers":54000,"avg_likes":2000,"avg_comments":150,"engagement_rate_percent":3.70,"posts_per_week":3,"follower_growth_30d_percent":3.6,"verified":"No"},
+{"influencer_id":"influencer_064","influencer_name":"Influencer_064","platform":"Twitch","category":"Fashion","followers":15200,"avg_likes":980,"avg_comments":75,"engagement_rate_percent":6.92,"posts_per_week":4,"follower_growth_30d_percent":6.2,"verified":"No"},
+{"influencer_id":"influencer_065","influencer_name":"Influencer_065","platform":"Twitter","category":"Tech","followers":9200,"avg_likes":400,"avg_comments":30,"engagement_rate_percent":4.57,"posts_per_week":2,"follower_growth_30d_percent":0.7,"verified":"No"},
+{"influencer_id":"influencer_066","influencer_name":"Influencer_066","platform":"Instagram","category":"Food","followers":44000,"avg_likes":3300,"avg_comments":260,"engagement_rate_percent":8.05,"posts_per_week":6,"follower_growth_30d_percent":14.1,"verified":"No"},
+{"influencer_id":"influencer_067","influencer_name":"Influencer_067","platform":"TikTok","category":"Travel","followers":121000,"avg_likes":12800,"avg_comments":950,"engagement_rate_percent":10.00,"posts_per_week":10,"follower_growth_30d_percent":28.0,"verified":"Yes"},
+{"influencer_id":"influencer_068","influencer_name":"Influencer_068","platform":"YouTube","category":"Lifestyle","followers":72000,"avg_likes":2600,"avg_comments":200,"engagement_rate_percent":3.89,"posts_per_week":3,"follower_growth_30d_percent":4.2,"verified":"Yes"},
+{"influencer_id":"influencer_069","influencer_name":"Influencer_069","platform":"Twitch","category":"Gaming","followers":19800,"avg_likes":1500,"avg_comments":120,"engagement_rate_percent":8.08,"posts_per_week":6,"follower_growth_30d_percent":10.0,"verified":"No"},
+{"influencer_id":"influencer_070","influencer_name":"Influencer_070","platform":"Twitter","category":"Beauty","followers":5600,"avg_likes":260,"avg_comments":20,"engagement_rate_percent":4.82,"posts_per_week":2,"follower_growth_30d_percent":-0.4,"verified":"No"},
+{"influencer_id":"influencer_071","influencer_name":"Influencer_071","platform":"Instagram","category":"Fashion","followers":41000,"avg_likes":2900,"avg_comments":200,"engagement_rate_percent":7.56,"posts_per_week":5,"follower_growth_30d_percent":10.0,"verified":"No"},
+{"influencer_id":"influencer_072","influencer_name":"Influencer_072","platform":"TikTok","category":"Tech","followers":65000,"avg_likes":5600,"avg_comments":420,"engagement_rate_percent":9.38,"posts_per_week":8,"follower_growth_30d_percent":19.5,"verified":"Yes"},
+{"influencer_id":"influencer_073","influencer_name":"Influencer_073","platform":"YouTube","category":"Fitness","followers":88000,"avg_likes":3200,"avg_comments":260,"engagement_rate_percent":4.18,"posts_per_week":3,"follower_growth_30d_percent":5.0,"verified":"Yes"},
+{"influencer_id":"influencer_074","influencer_name":"Influencer_074","platform":"Twitch","category":"Food","followers":13400,"avg_likes":980,"avg_comments":80,"engagement_rate_percent":7.39,"posts_per_week":4,"follower_growth_30d_percent":6.1,"verified":"No"},
+{"influencer_id":"influencer_075","influencer_name":"Influencer_075","platform":"Twitter","category":"Travel","followers":9200,"avg_likes":420,"avg_comments":35,"engagement_rate_percent":4.89,"posts_per_week":3,"follower_growth_30d_percent":2.3,"verified":"No"},
+{"influencer_id":"influencer_076","influencer_name":"Influencer_076","platform":"Instagram","category":"Lifestyle","followers":29000,"avg_likes":1900,"avg_comments":140,"engagement_rate_percent":6.90,"posts_per_week":5,"follower_growth_30d_percent":6.0,"verified":"No"},
+{"influencer_id":"influencer_077","influencer_name":"Influencer_077","platform":"TikTok","category":"Gaming","followers":37000,"avg_likes":3100,"avg_comments":230,"engagement_rate_percent":9.01,"posts_per_week":7,"follower_growth_30d_percent":12.0,"verified":"No"},
+{"influencer_id":"influencer_078","influencer_name":"Influencer_078","platform":"YouTube","category":"Beauty","followers":102000,"avg_likes":3800,"avg_comments":290,"engagement_rate_percent":4.12,"posts_per_week":2,"follower_growth_30d_percent":3.8,"verified":"Yes"},
+{"influencer_id":"influencer_079","influencer_name":"Influencer_079","platform":"Twitch","category":"Fashion","followers":15800,"avg_likes":1200,"avg_comments":95,"engagement_rate_percent":7.78,"posts_per_week":5,"follower_growth_30d_percent":7.4,"verified":"No"},
+{"influencer_id":"influencer_080","influencer_name":"Influencer_080","platform":"Twitter","category":"Tech","followers":6100,"avg_likes":280,"avg_comments":22,"engagement_rate_percent":4.92,"posts_per_week":1,"follower_growth_30d_percent":-1.0,"verified":"No"},
+{"influencer_id":"influencer_081","influencer_name":"Influencer_081","platform":"Instagram","category":"Food","followers":47000,"avg_likes":3300,"avg_comments":250,"engagement_rate_percent":7.02,"posts_per_week":6,"follower_growth_30d_percent":9.9,"verified":"No"},
+{"influencer_id":"influencer_082","influencer_name":"Influencer_082","platform":"TikTok","category":"Travel","followers":27400,"avg_likes":2400,"avg_comments":180,"engagement_rate_percent":9.09,"posts_per_week":7,"follower_growth_30d_percent":15.0,"verified":"No"},
+{"influencer_id":"influencer_083","influencer_name":"Influencer_083","platform":"YouTube","category":"Lifestyle","followers":65000,"avg_likes":2200,"avg_comments":170,"engagement_rate_percent":3.69,"posts_per_week":3,"follower_growth_30d_percent":2.6,"verified":"No"},
+{"influencer_id":"influencer_084","influencer_name":"Influencer_084","platform":"Twitch","category":"Gaming","followers":20400,"avg_likes":1600,"avg_comments":130,"engagement_rate_percent":8.37,"posts_per_week":6,"follower_growth_30d_percent":11.2,"verified":"No"},
+{"influencer_id":"influencer_085","influencer_name":"Influencer_085","platform":"Twitter","category":"Beauty","followers":7500,"avg_likes":350,"avg_comments":30,"engagement_rate_percent":4.67,"posts_per_week":2,"follower_growth_30d_percent":0.2,"verified":"No"},
+{"influencer_id":"influencer_086","influencer_name":"Influencer_086","platform":"Instagram","category":"Fashion","followers":190000,"avg_likes":12500,"avg_comments":900,"engagement_rate_percent":6.92,"posts_per_week":7,"follower_growth_30d_percent":8.0,"verified":"Yes"},
+{"influencer_id":"influencer_087","influencer_name":"Influencer_087","platform":"TikTok","category":"Tech","followers":280000,"avg_likes":24000,"avg_comments":1800,"engagement_rate_percent":9.00,"posts_per_week":12,"follower_growth_30d_percent":20.0,"verified":"Yes"},
+{"influencer_id":"influencer_088","influencer_name":"Influencer_088","platform":"YouTube","category":"Fitness","followers":360000,"avg_likes":9800,"avg_comments":650,"engagement_rate_percent":2.99,"posts_per_week":4,"follower_growth_30d_percent":3.0,"verified":"Yes"},
+{"influencer_id":"influencer_089","influencer_name":"Influencer_089","platform":"Twitch","category":"Food","followers":132000,"avg_likes":9800,"avg_comments":720,"engagement_rate_percent":7.58,"posts_per_week":8,"follower_growth_30d_percent":9.5,"verified":"Yes"},
+{"influencer_id":"influencer_090","influencer_name":"Influencer_090","platform":"Twitter","category":"Travel","followers":43000,"avg_likes":1800,"avg_comments":140,"engagement_rate_percent":4.42,"posts_per_week":3,"follower_growth_30d_percent":2.5,"verified":"No"},
+{"influencer_id":"influencer_091","influencer_name":"Influencer_091","platform":"Instagram","category":"Lifestyle","followers":82000,"avg_likes":6200,"avg_comments":480,"engagement_rate_percent":8.37,"posts_per_week":6,"follower_growth_30d_percent":12.0,"verified":"Yes"},
+{"influencer_id":"influencer_092","influencer_name":"Influencer_092","platform":"TikTok","category":"Gaming","followers":410000,"avg_likes":36000,"avg_comments":2800,"engagement_rate_percent":9.51,"posts_per_week":14,"follower_growth_30d_percent":30.5,"verified":"Yes"},
+{"influencer_id":"influencer_093","influencer_name":"Influencer_093","platform":"YouTube","category":"Beauty","followers":210000,"avg_likes":7200,"avg_comments":500,"engagement_rate_percent":3.62,"posts_per_week":3,"follower_growth_30d_percent":4.0,"verified":"Yes"},
+{"influencer_id":"influencer_094","influencer_name":"Influencer_094","platform":"Twitch","category":"Fashion","followers":78000,"avg_likes":5400,"avg_comments":420,"engagement_rate_percent":7.95,"posts_per_week":7,"follower_growth_30d_percent":11.5,"verified":"Yes"},
+{"influencer_id":"influencer_095","influencer_name":"Influencer_095","platform":"Twitter","category":"Tech","followers":65000,"avg_likes":2600,"avg_comments":200,"engagement_rate_percent":4.31,"posts_per_week":2,"follower_growth_30d_percent":3.2,"verified":"No"},
+{"influencer_id":"influencer_096","influencer_name":"Influencer_096","platform":"Instagram","category":"Food","followers":94000,"avg_likes":7600,"avg_comments":610,"engagement_rate_percent":8.10,"posts_per_week":7,"follower_growth_30d_percent":13.0,"verified":"Yes"},
+{"influencer_id":"influencer_097","influencer_name":"Influencer_097","platform":"TikTok","category":"Travel","followers":125000,"avg_likes":11500,"avg_comments":900,"engagement_rate_percent":9.92,"posts_per_week":10,"follower_growth_30d_percent":24.0,"verified":"Yes"},
+{"influencer_id":"influencer_098","influencer_name":"Influencer_098","platform":"YouTube","category":"Lifestyle","followers":980000,"avg_likes":26000,"avg_comments":2100,"engagement_rate_percent":2.84,"posts_per_week":3,"follower_growth_30d_percent":4.5,"verified":"Yes"},
+{"influencer_id":"influencer_099","influencer_name":"Influencer_099","platform":"Twitch","category":"Gaming","followers":1750000,"avg_likes":210000,"avg_comments":15000,"engagement_rate_percent":12.21,"posts_per_week":20,"follower_growth_30d_percent":45.0,"verified":"Yes"},
+{"influencer_id":"influencer_100","influencer_name":"Influencer_100","platform":"Twitter","category":"Beauty","followers":2400000,"avg_likes":24000,"avg_comments":2000,"engagement_rate_percent":1.09,"posts_per_week":5,"follower_growth_30d_percent":2.0,"verified":"Yes"}
+];
+/* ========== Helper functions & preprocessing ========== */
+
+function computeDerived(data){
+  data.forEach(d=>{
+    d.engagement_per_post = (d.avg_likes || 0) + (d.avg_comments || 0);
+    d.efficiency_score = +(d.engagement_rate_percent * (1 + (d.follower_growth_30d_percent || 0)/100)).toFixed(3);
+    // follower_tier
+    if (d.followers <= 50000) d.follower_tier = 'micro';
+    else if (d.followers <= 250000) d.follower_tier = 'mid';
+    else if (d.followers <= 1000000) d.follower_tier = 'macro';
+    else d.follower_tier = 'mega';
+  });
+}
+
+computeDerived(rawData);
+
+/* populate filter dropdowns */
+const platforms = [...new Set(rawData.map(d=>d.platform))].sort();
+const categories = [...new Set(rawData.map(d=>d.category))].sort();
+
+const pf = document.getElementById('filterPlatform');
+platforms.forEach(p=>{
+  const o = document.createElement('option'); o.value = p; o.textContent = p; pf.appendChild(o);
+});
+const cf = document.getElementById('filterCategory');
+categories.forEach(c=>{
+  const o = document.createElement('option'); o.value = c; o.textContent = c; cf.appendChild(o);
+});
+
+/* DataTable variable */
+let dataTable = null;
+
+/* ========== Core: filter + render pipeline ========== */
+function getFilters(){
+  return {
+    platform: document.getElementById('filterPlatform').value,
+    category: document.getElementById('filterCategory').value,
+    verified: document.getElementById('filterVerified').value,
+    tier: document.getElementById('filterTier').value,
+    minEng: parseFloat(document.getElementById('filterMinEng').value) || 0,
+    minGrowth: parseFloat(document.getElementById('filterMinGrowth').value) || -100,
+    searchText: document.getElementById('tableSearch').value.trim().toLowerCase()
+  };
+}
+
+function applyFiltersAndRender(){
+  const f = getFilters();
+
+  let filtered = rawData.filter(d=>{
+    if (f.platform!=='All' && d.platform !== f.platform) return false;
+    if (f.category!=='All' && d.category !== f.category) return false;
+    if (f.verified!=='All' && d.verified !== f.verified) return false;
+    if (f.tier!=='All' && d.follower_tier !== f.tier) return false;
+    if ((d.engagement_rate_percent || 0) < f.minEng) return false;
+    if ((d.follower_growth_30d_percent || 0) < f.minGrowth) return false;
+    if (f.searchText && !d.influencer_name.toLowerCase().includes(f.searchText)) return false;
+    return true;
+  });
+
+  updateKPIs(filtered);
+  renderCharts(filtered);
+  renderTable(filtered);
+}
+
+document.getElementById('applyFiltersBtn').addEventListener('click', applyFiltersAndRender);
+document.getElementById('resetFiltersBtn').addEventListener('click', ()=>{
+  document.getElementById('filterPlatform').value='All';
+  document.getElementById('filterCategory').value='All';
+  document.getElementById('filterVerified').value='All';
+  document.getElementById('filterTier').value='All';
+  document.getElementById('filterMinEng').value='0';
+  document.getElementById('filterMinGrowth').value='-100';
+  document.getElementById('tableSearch').value='';
+  applyFiltersAndRender();
+});
+document.getElementById('tableSearch').addEventListener('keyup', ()=>{
+  // realtime search (optional)
+  applyFiltersAndRender();
+});
+
+/* KPI cards */
+function updateKPIs(data){
+  const totalReach = data.reduce((s,d)=>s + (d.followers||0),0);
+  const avgEng = data.length ? (data.reduce((s,d)=>s + (d.engagement_rate_percent||0),0)/data.length) : 0;
+  const medianGrowth = (()=>{ const arr = data.map(d=>d.follower_growth_30d_percent||0).sort((a,b)=>a-b); if(!arr.length) return 0; const mid=Math.floor(arr.length/2); return arr.length%2?arr[mid]:((arr[mid-1]+arr[mid])/2); })();
+  const verifiedCount = data.filter(d=>d.verified==='Yes').length;
+  const avgPosts = data.length ? (data.reduce((s,d)=>s + (d.posts_per_week||0),0)/data.length) : 0;
+
+  document.getElementById('kpi_total_reach').textContent = numberWithCommas(Math.round(totalReach));
+  document.getElementById('kpi_avg_eng').textContent = avgEng.toFixed(2) + '%';
+  document.getElementById('kpi_median_growth').textContent = medianGrowth.toFixed(2) + '%';
+  document.getElementById('kpi_verified_count').textContent = verifiedCount;
+  document.getElementById('kpi_avg_posts').textContent = avgPosts.toFixed(1);
+}
+
+/* Charts rendering */
+function renderCharts(data){
+  // 1) Avg Engagement by Platform (bar)
+  const platformGroups = {};
+  data.forEach(d=>{
+    if(!platformGroups[d.platform]) platformGroups[d.platform] = {sum:0,count:0,sumGrowth:0};
+    platformGroups[d.platform].sum += d.engagement_rate_percent || 0;
+    platformGroups[d.platform].count += 1;
+    platformGroups[d.platform].sumGrowth += d.follower_growth_30d_percent || 0;
+  });
+  const platKeys = Object.keys(platformGroups).sort((a,b)=> (platformGroups[b].sum/platformGroups[b].count) - (platformGroups[a].sum/platformGroups[a].count));
+  const platAvgEng = platKeys.map(k=> platformGroups[k].sum / platformGroups[k].count );
+  const platAvgGrowth = platKeys.map(k=> platformGroups[k].sumGrowth / platformGroups[k].count );
+
+  const barData = [{
+    x: platKeys,
+    y: platAvgEng,
+    type: 'bar',
+    marker:{color: '#0ea5a4'},
+    text: platAvgEng.map(v=>v.toFixed(2)+'%'),
+    textposition:'auto'
+  }];
+  const barLayout = { margin:{t:30,l:40,r:20,b:40}, title:'Average Engagement Rate by Platform', yaxis:{title:'Engagement %'} };
+  Plotly.newPlot('chartEngByPlatform', barData, barLayout, {displayModeBar:false});
+
+  // 2) Avg 30d Growth by Platform (bar orange)
+  const barData2 = [{ x: platKeys, y: platAvgGrowth, type: 'bar', marker:{color:'#fb923c'}, text: platAvgGrowth.map(v=>v.toFixed(1)+'%'), textposition:'auto' }];
+  const barLayout2 = { margin:{t:10,l:40,r:10,b:40}, title:'Average 30d Follower Growth by Platform', yaxis:{title:'30d Growth %'} };
+  Plotly.newPlot('chartGrowthByPlatform', barData2, barLayout2, {displayModeBar:false});
+
+  // 3) Scatter: Followers vs Engagement
+  const colorMap = { TikTok:'#ef4444', Twitch:'#6366f1', Instagram:'#06b6d4', YouTube:'#f97316', Twitter:'#3b82f6' };
+  const groups = {};
+  data.forEach(d=>{
+    if(!groups[d.platform]) groups[d.platform] = {x:[],y:[],text:[],size:[]};
+    groups[d.platform].x.push(d.followers);
+    groups[d.platform].y.push(d.engagement_rate_percent);
+    groups[d.platform].text.push(`${d.influencer_name}<br>Followers: ${numberWithCommas(d.followers)}<br>Eng: ${d.engagement_rate_percent}%<br>30d growth: ${d.follower_growth_30d_percent}%`);
+    groups[d.platform].size.push(Math.max(8, Math.log10((d.engagement_per_post||1)+1))*6);
+  });
+  const traces = Object.keys(groups).map(k=>({
+    x:groups[k].x, y:groups[k].y, text:groups[k].text, mode:'markers', name:k,
+    marker:{size:groups[k].size, color: colorMap[k] || '#64748b', sizemode:'area', sizeref:2}
+  }));
+  const scatterLayout = { margin:{t:30,l:60,r:10,b:60}, title:'Followers vs Engagement Rate', xaxis:{type:'log', title:'Followers (log scale)', tickvals:[5000,50000,500000,5000000], ticktext:['5K','50K','500K','5M']}, yaxis:{title:'Engagement %'}, hovermode:'closest' };
+  Plotly.newPlot('chartScatter', traces, scatterLayout, {displayModeBar:false});
+
+  // 4) Heatmap: Avg engagement per category x platform
+  const cats = [...new Set(data.map(d=>d.category))].sort();
+  const plats = platKeys;
+  const heatData = cats.map(cat=>{
+    return plats.map(pl=>{
+      const subset = data.filter(d=>d.category===cat && d.platform===pl);
+      if(subset.length===0) return 0;
+      return +(subset.reduce((s,d)=>s + (d.engagement_rate_percent||0),0) / subset.length).toFixed(2);
+    });
+  });
+  const heattrace = [{ z: heatData, x: plats, y: cats, type:'heatmap', colorscale:'YlGnBu', colorbar:{title:'Eng %'} }];
+  const heatLayout = { margin:{t:20,l:80,r:10,b:60}, title:'Avg Engagement Rate — Category × Platform' };
+  Plotly.newPlot('chartHeatmap', heattrace, heatLayout, {displayModeBar:false});
+
+  // 5) Pie: influencer count by category
+  const catCounts = {};
+  data.forEach(d=> catCounts[d.category] = (catCounts[d.category]||0)+1);
+  const pieData = [{ labels: Object.keys(catCounts), values: Object.values(catCounts), type:'pie', textinfo:'label+percent', marker:{line:{color:'#fff', width:1}} }];
+  Plotly.newPlot('chartPie', pieData, {margin:{t:10,b:10}, title:'Influencer Count by Category'}, {displayModeBar:false});
+
+  // 6) Histogram Engagement distribution
+  const histData = [{ x: data.map(d=>d.engagement_rate_percent), type:'histogram', nbinsx:10, marker:{color:'#60a5fa'}}];
+  Plotly.newPlot('chartHist', histData, {margin:{t:10,b:10}, title:'Engagement Rate Distribution (%)', xaxis:{title:'Engagement %'}}, {displayModeBar:false});
+
+  // 7) Boxplot by platform
+  const boxTraces = Object.keys(groups).map(k=>({ y: groups[k].y, name:k, type:'box', marker:{color: colorMap[k] || '#94a3b8'} }));
+  Plotly.newPlot('chartBox', boxTraces, {margin:{t:10,b:40}, title:'Engagement Rate by Platform'}, {displayModeBar:false});
+}
+
+/* Table rendering and shortlist */
+let currentFiltered = [];
+function renderTable(data){
+  currentFiltered = data;
+  // build table rows
+  const tbody = document.getElementById('leaderboardBody');
+  tbody.innerHTML = '';
+  data.forEach((d, idx)=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="text-align:center"><input type="checkbox" class="rowSelect" data-idx="${idx}"/></td>
+      <td><strong>${escapeHtml(d.influencer_name)}</strong></td>
+      <td>${escapeHtml(d.platform)}</td>
+      <td>${escapeHtml(d.category)}</td>
+      <td style="text-align:right">${numberWithCommas(d.followers)}</td>
+      <td style="text-align:right">${(d.engagement_rate_percent||0).toFixed(2)}%</td>
+      <td style="text-align:right">${(d.follower_growth_30d_percent||0).toFixed(2)}%</td>
+      <td style="text-align:center">${d.verified}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // initialize DataTable or redraw
+  if (dataTable) {
+    dataTable.destroy();
+    $('#leaderboard').empty();
+    $('#leaderboard').append(`<thead>
+            <tr>
+              <th><input type="checkbox" id="selectAll"/></th>
+              <th>Influencer</th>
+              <th>Platform</th>
+              <th>Category</th>
+              <th>Followers</th>
+              <th>Engagement %</th>
+              <th>30d Growth %</th>
+              <th>Verified</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody"></tbody>`);
+    document.getElementById('leaderboardBody').innerHTML = tbody.innerHTML;
+  }
+
+  dataTable = $('#leaderboard').DataTable({
+    paging: true,
+    pageLength: 10,
+    order: [[5, 'desc']],
+    columnDefs: [
+      { orderable:false, targets:0 }
+    ],
+    dom: 'lrtip'
+  });
+
+  // rebind select all and row checkboxes handlers
+  $('#selectAll').on('change', function(){
+    const checked = this.checked;
+    $('.rowSelect').prop('checked', checked);
+  });
+}
+
+/* Export shortlist */
+function getSelectedRows(){
+  const selected = [];
+  $('.rowSelect').each(function(){
+    if (this.checked){
+      const idx = parseInt(this.getAttribute('data-idx'),10);
+      if (!isNaN(idx) && currentFiltered[idx]) selected.push(currentFiltered[idx]);
+    }
+  });
+  return selected;
+}
+
+document.getElementById('exportShortlist').addEventListener('click', ()=>{
+  const selected = getSelectedRows();
+  if (selected.length===0){
+    alert('No rows selected for export. Use the checkboxes to shortlist rows.');
+    return;
+  }
+  const csv = toCsv(selected);
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+  saveAs(blob, 'influencer_shortlist.csv');
+});
+
+document.getElementById('clearShortlist').addEventListener('click', ()=>{
+  $('.rowSelect').prop('checked', false);
+  $('#selectAll').prop('checked', false);
+});
+
+/* Export all CSV button */
+document.getElementById('exportAllCsv').addEventListener('click', ()=>{
+  const csv = toCsv(rawData);
+  const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
+  saveAs(blob, 'influencer_dataset_full.csv');
+});
+
+/* Utilities */
+function numberWithCommas(x){ return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+function escapeHtml(str){ return (str+'').replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function toCsv(arr){
+  if(!arr.length) return '';
+  const keys = Object.keys(arr[0]);
+  const header = keys.join(',');
+  const rows = arr.map(r=> keys.map(k=>{
+    const v = r[k]===null||r[k]===undefined? '' : (''+r[k]).replace(/"/g,'""');
+    return `"${v}"`;
+  }).join(','));
+  return [header].concat(rows).join('\n');
+}
+
+/* Initial render */
+applyFiltersAndRender();
+
+</script>
+</body>
+</html>
